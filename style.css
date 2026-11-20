@@ -1,0 +1,61 @@
+:root {
+  --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --card: #f0eee8; --line: #dcd9d0;
+  --accent: #1f5fa8; --sky: #cfdde9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --fg: #e9e7e1; --muted: #9b998f; --card: #22211f; --line: #34332f;
+    --accent: #84b3ea; --sky: #2b3640;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141413; --fg: #e9e7e1; --muted: #9b998f; --card: #22211f; --line: #34332f;
+  --accent: #84b3ea; --sky: #2b3640;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 0 16px 48px; }
+a { color: var(--accent); }
+header.top { border-bottom: 1px solid var(--line); padding: 12px 16px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; max-width: 1200px; margin: 0 auto; }
+header.top .brand { font-weight: 700; text-decoration: none; color: var(--fg); }
+h1 { font-size: 1.4rem; margin: 20px 0 6px; }
+h2 { font-size: 1rem; margin: 22px 0 8px; }
+.muted { color: var(--muted); font-size: .88rem; }
+.lead { max-width: 70ch; }
+.big { font-size: 2.2rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 16px; border-radius: 4px; overflow: hidden; background: var(--card); min-width: 60px; }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .85rem; margin: 8px 0; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+details.years { margin: 12px 0; }
+details.years summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.tablewrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td.barcell { width: 45%; }
+tbody tr { cursor: pointer; }
+tbody tr.sel { background: var(--card); }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
+select, button.small { font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+#map { height: 65vh; min-height: 340px; border-radius: 8px; border: 1px solid var(--line); }
+.pano-wrap { position: relative; }
+#panomap { height: 68vh; min-height: 320px; border-radius: 8px; border: 1px solid var(--line); background: var(--sky); }
+.badge { position: absolute; bottom: 10px; z-index: 500; background: rgba(0,0,0,.62); color: #fff; font-size: .78rem; padding: 4px 8px; border-radius: 6px; max-width: 45%; pointer-events: none; }
+.badge .credit { display: block; opacity: .82; font-size: .7rem; }
+#badge-left { left: 10px; } #badge-right { right: 10px; }
+#swipe { position: absolute; inset: 0; z-index: 450; pointer-events: none; }
+#swipe .line { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.6); }
+#swipe .knob { position: absolute; top: 50%; width: 36px; height: 36px; margin: -18px 0 0 -18px; border-radius: 50%; background: #fff; box-shadow: 0 0 4px rgba(0,0,0,.6); pointer-events: auto; cursor: ew-resize; touch-action: none; display: grid; place-items: center; font-size: 14px; color: #333; user-select: none; }
+.name-label { background: rgba(255,255,255,.88); color: #111; border: 0; border-radius: 4px; padding: 1px 5px; font-size: 11px; box-shadow: 0 0 2px rgba(0,0,0,.4); white-space: nowrap; }
+.name-label.glacier { background: rgba(220,236,255,.92); }
+.nav { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; margin: 14px 0 4px; }
+.nav h1 { margin: 0; margin-right: auto; }
+footer { border-top: 1px solid var(--line); margin-top: 32px; padding-top: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.chips label { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 7px 12px; cursor: pointer; font-size: .9rem; }
+.chips input { position: absolute; opacity: 0; }
+.chips label:has(input:checked) { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+#feedback textarea { width: 100%; font: inherit; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+#feedback button.small { padding: 8px 12px; cursor: pointer; }
+@media (max-width: 600px) { #panomap { height: 52vh; } }

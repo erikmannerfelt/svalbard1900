@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Svalbard 1900</title>
+<meta name="description" content="Camera stations of the Norwegian phototheodolite survey of Svalbard, 1906–1928, found by matching the skylines of the plates to today's terrain.">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><a class="brand" href="index.html">Svalbard 1900</a>
+  <span class="muted">Phototheodolite stations of the 1906–1928 surveys</span></header>
+<main>
+<h1>Where were the plates taken?</h1>
+<p class="lead">Between 1906 and 1928, Norwegian expeditions mapped Svalbard with a phototheodolite, a levelled survey
+camera on glass plates. The plates are kept by the Norwegian Polar Institute (series NBR9201), but for most of them we
+no longer know exactly where the camera stood. This project finds the stations by matching the mountains in the plates
+to today's terrain model. Every panorama on the map has been checked by eye. Open one to compare the plates with the
+terrain rendered from the same spot.</p>
+
+<div id="summary"></div>
+<details class="years" id="years">
+  <summary>Progress per year</summary>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Year</th><th>Aligned</th><th></th><th>Plates</th></tr></thead>
+    <tbody id="yearrows"></tbody>
+  </table></div>
+  <p class="muted">Click a year to show it on the map.</p>
+</details>
+
+<h2 id="maptitle">Map of confirmed stations</h2>
+<div class="toolbar">
+  <label>Year <select id="year"><option value="">All</option></select></label>
+  <span class="muted" id="mapcount"></span>
+</div>
+<div id="map"></div>
+
+<footer class="muted">
+  <p>Plates: Norwegian Polar Institute, series NBR9201 (Fotoware previews). Terrain model (S0 DTM20), orthophotos, maps and
+  place names: Norwegian Polar Institute, CC BY 4.0. Station positions and viewer: Erik Schytt Mannerfelt.</p>
+  <p id="generated"></p>
+</footer>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script>
+(function () {
+  function pad(n) { return String(n).padStart(5, "0"); }
+  function range(plates) {
+    return plates.length > 1 ? pad(plates[0]) + "–" + pad(plates[plates.length - 1]) : pad(plates[0]);
+  }
+  function el(tag, attrs, html) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (html !== undefined) e.innerHTML = html;
+    return e;
+  }
+  // Map state in the URL hash (year, centre, zoom), so Back and links from a panorama restore it.
+  function readState() {
+    var s = {};
+    location.hash.slice(1).split("&").forEach(function (kv) {
+      var i = kv.indexOf("=");
+      if (i > 0) s[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+    });
+    return s;
+  }
+  function writeState(map, year) {
+    var c = map.getCenter();
+    var hash = "#y=" + encodeURIComponent(year) + "&c=" + c.lat.toFixed(4) + "," + c.lng.toFixed(4) + "&z=" + map.getZoom();
+    history.replaceState(null, "", hash);
+    try { sessionStorage.setItem("mapHash", hash); } catch (e) { /* storage blocked: the hash still works */ }
+  }
+
+  fetch("data/progress.json").then(function (r) { return r.json(); }).then(function (data) {
+    var color = {}, label = {};
+    data.statuses.forEach(function (s) { color[s.key] = s.color; label[s.key] = s.label; });
+    function bar(s) {
+      var b = el("div", {"class": "bar", title: s.aligned + " of " + s.included + " plates aligned"});
+      data.statuses.forEach(function (st) {
+        var n = s.plates[st.key];
+        if (n && s.included) b.appendChild(el("span", {style: "width:" + (100 * n / s.included) + "%;background:" + st.color, title: st.label + ": " + n}));
+      });
+      return b;
+    }
+    var t = data.total;
+    var summary = document.getElementById("summary");
+    summary.appendChild(el("p", {}, '<span class="big">' + (100 * t.aligned / t.included).toFixed(1) + ' %</span> ' +
+      '<span class="muted">of ' + t.included.toLocaleString("en") + ' plates have a known camera position and direction (' +
+      t.aligned.toLocaleString("en") + ')</span>'));
+    summary.appendChild(bar(t));
+    var legend = el("div", {"class": "legend"});
+    data.statuses.forEach(function (st) {
+      legend.appendChild(el("span", {}, '<i style="background:' + st.color + '"></i>' + st.label + " " + t.plates[st.key].toLocaleString("en")));
+    });
+    summary.appendChild(legend);
+    document.getElementById("generated").textContent = "Updated " + data.generated.slice(0, 10) + ".";
+
+    var rows = document.getElementById("yearrows"), pick = document.getElementById("year");
+    data.years.forEach(function (y) {
+      var tr = el("tr", {"data-year": y.year});
+      tr.appendChild(el("td", {}, y.year));
+      tr.appendChild(el("td", {}, (y.included ? 100 * y.aligned / y.included : 0).toFixed(0) + " %"));
+      var cell = el("td", {"class": "barcell"}); cell.appendChild(bar(y)); tr.appendChild(cell);
+      tr.appendChild(el("td", {}, y.aligned + " / " + y.included));
+      rows.appendChild(tr);
+      pick.appendChild(el("option", {}, y.year));
+    });
+
+    var state = readState();
+    var npi = "https://geodata.npolar.no/arcgis/rest/services/Basisdata/";
+    function layer(name) {
+      return L.tileLayer(npi + name + "/MapServer/tile/{z}/{y}/{x}", {maxNativeZoom: 17, maxZoom: 18, attribution: "© Norwegian Polar Institute"});
+    }
+    var topo = layer("NP_Basiskart_Svalbard_WMTS_3857");
+    var map = L.map("map", {layers: [topo]});
+    L.control.layers({"TopoSvalbard": topo, "Orthophoto": layer("NP_Ortofoto_Svalbard_WMTS_3857")}).addTo(map);
+    L.control.scale({imperial: false}).addTo(map);
+    // Clusters, so stations on top of each other stay clickable (they spread out on click).
+    var shown = L.markerClusterGroup({maxClusterRadius: 35, spiderfyOnMaxZoom: true, showCoverageOnHover: false}).addTo(map), byGroup = {};
+    var year = state.y || "";
+    pick.value = year;
+
+    function draw(fit) {
+      shown.clearLayers();
+      var n = 0, bounds = [];
+      data.markers.forEach(function (m) {
+        if (year && m.year !== year) return;
+        n += 1;
+        bounds.push([m.lat, m.lon]);
+        var marker = L.circleMarker([m.lat, m.lon], {radius: 6, color: "#222", weight: 1, fillColor: color.confirmed, fillOpacity: .95})
+          .bindPopup("<b>" + m.year + (m.name ? ", " + m.name : "") + "</b><br>Plates " + range(m.plates) +
+                     " (" + m.plates.length + "), " + m.z + " m a.s.l.<br>" +
+                     '<a href="panorama.html?g=' + m.group + '">View the panorama →</a>')
+          .addTo(shown);
+        byGroup[m.group] = marker;
+      });
+      document.getElementById("mapcount").textContent = n + " panoramas";
+      if (fit && bounds.length) map.fitBounds(bounds, {padding: [30, 30], maxZoom: 11});
+      rows.querySelectorAll("tr").forEach(function (r) { r.classList.toggle("sel", r.dataset.year === year); });
+      writeState(map, year);
+    }
+    if (state.c && state.z) {
+      var c = state.c.split(",").map(Number);
+      map.setView(c, Number(state.z));
+      draw(false);
+    } else {
+      map.setView([78.6, 16.0], 6);
+      draw(Boolean(year));
+    }
+    if (state.g && byGroup[state.g]) shown.zoomToShowLayer(byGroup[state.g], function () { byGroup[state.g].openPopup(); });
+    // Links back from a panorama ask for the map itself, not the top of the page.
+    if (state.go === "map") document.getElementById("maptitle").scrollIntoView();
+    map.on("moveend", function () { writeState(map, year); });
+    pick.addEventListener("change", function () { year = pick.value; draw(true); });
+    rows.querySelectorAll("tr").forEach(function (r) {
+      r.addEventListener("click", function () {
+        year = r.dataset.year === year ? "" : r.dataset.year;
+        pick.value = year;
+        draw(true);
+        document.getElementById("map").scrollIntoView({behavior: "smooth"});
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>
