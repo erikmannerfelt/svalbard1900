@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panorama</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top"><a class="brand" href="index.html">Svalbard 1900</a>
+  <a id="back" href="index.html">← Back to the map</a></header>
+<main>
+<div class="nav">
+  <h1 id="title">Panorama</h1>
+  <a id="prev" href="#">← Previous</a>
+  <a id="next" href="#">Next →</a>
+  <a id="onmap" href="index.html">Show on the map</a>
+</div>
+<p class="muted" id="about"></p>
+<div class="pano-wrap">
+  <div id="panomap"></div>
+  <div id="swipe"><div class="line"></div><div class="knob" aria-label="Drag to compare">⇔</div></div>
+  <div class="badge" id="badge-left"><strong id="left-label">Left: plates</strong>
+    <span class="credit">Norwegian Polar Institute, NBR9201 (Fotoware preview)</span></div>
+  <div class="badge" id="badge-right"><strong>Right: rendered terrain</strong>
+    <span class="credit">S0 DTM20 and orthophoto: Norwegian Polar Institute, CC BY 4.0</span></div>
+</div>
+<div class="toolbar">
+  <label><input type="checkbox" id="t-render" checked> Terrain on the right</label>
+  <label><input type="checkbox" id="t-skyline"> Rendered skyline</label>
+  <label><input type="checkbox" id="t-names"> Place names</label>
+</div>
+<p class="muted" id="plates"></p>
+<section id="feedback" hidden>
+  <h2>Your feedback <span class="muted">(local tool only)</span></h2>
+  <div class="chips" id="verdicts">
+    <label><input type="radio" name="verdict" value="Fits well"> Fits well</label>
+    <label><input type="radio" name="verdict" value="Close: location a bit off"> Close: location a bit off</label>
+    <label><input type="radio" name="verdict" value="Fits partly"> Fits partly</label>
+    <label><input type="radio" name="verdict" value="Does not fit"> Does not fit</label>
+  </div>
+  <div class="toolbar">
+    <button type="button" class="small" id="tp-mode">Mark misaligned features</button>
+    <button type="button" class="small" id="tp-undo" hidden>Undo last</button>
+    <label id="tp-opacity-label" hidden>Terrain <input type="range" id="tp-opacity" min="0" max="100" value="50"></label>
+    <span class="muted" id="tp-count"></span>
+  </div>
+  <p class="muted" id="tp-help" hidden>Tap a feature on the <b>old plate</b> (red), then the same feature in the
+  <b>terrain</b> (blue). Use the slider to see one or the other. Three points fix the position; to check the
+  scale (focal length), mark at least five spread over at least 40° (about one plate), e.g. at both ends of
+  the panorama.</p>
+  <textarea id="fb-note" rows="3" placeholder="Note (optional)"></textarea>
+  <div class="toolbar"><button type="button" class="small" id="fb-save">Save feedback</button>
+    <span class="muted" id="fb-status"></span></div>
+  <ul class="muted" id="fb-history"></ul>
+</section>
+<footer class="muted">
+  <p>The terrain is rendered from the S0 DTM20 terrain model with orthophotos draped on it, seen from the solved camera
+  position. Glaciers have changed a lot since the plates were taken: the differences are the point.</p>
+</footer>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  var group = new URLSearchParams(location.search).get("g") || "";
+  if (!/^\d{5}$/.test(group)) { document.getElementById("title").textContent = "No panorama selected"; return; }
+  function pad(n) { return String(n).padStart(5, "0"); }
+  var mapHash = null;
+  try { mapHash = sessionStorage.getItem("mapHash"); } catch (e) { /* storage blocked */ }
+
+  Promise.all([
+    fetch("data/panoramas/" + group + ".json").then(function (r) { return r.json(); }),
+    fetch("data/progress.json").then(function (r) { return r.json(); })
+  ]).then(function (res) {
+    var pano = res[0], markers = res[1].markers.slice().sort(function (a, b) { return a.group.localeCompare(b.group); });
+    document.title = "Panorama " + group + " (" + pano.year + ")";
+    document.getElementById("title").textContent = "Panorama " + group + " (" + pano.year + ")";
+    document.getElementById("left-label").textContent = "Left: plates " + pano.year;
+    var p = pano.pose;
+    document.getElementById("about").textContent = "Camera at " + p.lat.toFixed(4) + "° N, " + p.lon.toFixed(4) + "° E, " +
+      Math.round(p.ground) + " m above sea level. Drag the white handle to compare the plates with the terrain seen from the same spot.";
+    var mapLink = "index.html#y=" + pano.year + "&c=" + p.lat.toFixed(4) + "," + p.lon.toFixed(4) + "&z=12&g=" + group + "&go=map";
+    document.getElementById("onmap").href = mapLink;
+    document.getElementById("back").href = "index.html" + (mapHash || "#c=" + p.lat.toFixed(4) + "," + p.lon.toFixed(4) + "&z=10&g=" + group) + "&go=map";
+    // On the local phone tool, the map is its /progress page (same hash keys), and its pages are linked.
+    if (location.pathname.indexOf("/site/") === 0) {
+      var root = location.pathname.replace(/\/site\/.*$/, "/");
+      var fromProgress = document.referrer.indexOf(location.origin + root + "progress") === 0;
+      var progressBack = fromProgress ? document.referrer : root + "progress#c=" + p.lat.toFixed(4) + "," + p.lon.toFixed(4) + "&z=10";
+      try {
+        if (fromProgress) sessionStorage.setItem("progressBack", progressBack);
+        progressBack = sessionStorage.getItem("progressBack") || progressBack;
+      } catch (e) { /* storage blocked: the referrer or the station still works */ }
+      document.getElementById("back").href = progressBack;
+      document.getElementById("onmap").href = root + "progress#y=" + pano.year + "&c=" + p.lat.toFixed(4) + "," + p.lon.toFixed(4) + "&z=12";
+      var nav = document.querySelector("header.top");
+      [["Tasks", root], ["Progress", root + "progress"]].forEach(function (l) {
+        var a = document.createElement("a");
+        a.href = l[1]; a.textContent = l[0];
+        nav.appendChild(a);
+      });
+    }
+    var i = markers.findIndex(function (m) { return m.group === group; });
+    [["prev", -1], ["next", 1]].forEach(function (d) {
+      var m = markers[(i + d[1] + markers.length) % markers.length];
+      var a = document.getElementById(d[0]);
+      if (i < 0 || !m) { a.style.display = "none"; return; }
+      a.href = "panorama.html?g=" + m.group;
+      a.title = m.group + " (" + m.year + ")";
+    });
+    document.getElementById("plates").innerHTML = "Plates in the NPI archive: " + pano.plates.map(function (q) {
+      return q.fotoware ? '<a href="https://npolar.fotoware.cloud' + q.fotoware + '" target="_blank" rel="noopener">' + q.id + "</a>" : q.id;
+    }).join(", ");
+
+    var b = pano.render.bounds, yMin = b[0][0], yMax = b[1][0], xMax = b[1][1], F = pano.view_f_px;
+    var bounds = L.latLngBounds(b);
+    var map = L.map("panomap", {crs: L.CRS.Simple, minZoom: -3, maxZoom: 3, zoomSnap: 0.25, zoomDelta: 0.5,
+                                 attributionControl: false, maxBoundsViscosity: 0.8});
+    // A full circle repeats every 360 degrees (P viewer pixels). The view is never moved: copies of
+    // everything sit in the turns around the one under the view's centre and follow it whenever the
+    // centre crosses into another turn. (Jumping the view back by 360 degrees fought Leaflet's
+    // drag inertia: a fling, or a grab during one, landed somewhere else.)
+    var P = 2 * Math.PI * F, circle = xMax >= 0.97 * P, offsets = circle ? [-2, -1, 0, 1, 2] : [0];
+    if (circle) {
+      var padY = 0.1 * (yMax - yMin);
+      map.setMaxBounds([[yMin - padY, -1e9], [yMax + padY, 1e9]]);
+    } else {
+      map.setMaxBounds(bounds.pad(0.1));
+    }
+    function shifted(k) { return [[yMin, k * P], [yMax, xMax + k * P]]; }
+    map.createPane("plates").style.zIndex = 300;
+    map.createPane("render").style.zIndex = 310;
+    var plateImages = offsets.map(function (k) {
+      return L.imageOverlay("data/panoramas/" + group + "_plates.webp", shifted(k), {pane: "plates"}).addTo(map);
+    });
+    var renderImages = offsets.map(function (k) {
+      return L.imageOverlay("data/panoramas/" + group + "_render.webp", shifted(k), {pane: "render"});
+    });
+    var render = L.layerGroup(renderImages).addTo(map);
+    var skyline = L.layerGroup(), names = L.layerGroup(), nameMarkers = [];
+    var ranked = pano.names.slice().sort(function (a, c) {
+      return (c.terrain === "mountain") - (a.terrain === "mountain") || c.altitude - a.altitude || a.km - c.km;
+    });
+    var turn = null;
+    function placeCopies() {
+      var n = circle ? Math.floor(map.getCenter().lng / P) : 0;
+      if (n === turn) return;
+      turn = n;
+      offsets.forEach(function (k, i) {
+        plateImages[i].setBounds(L.latLngBounds(shifted(n + k)));
+        renderImages[i].setBounds(L.latLngBounds(shifted(n + k)));
+      });
+      skyline.clearLayers();
+      names.clearLayers();
+      nameMarkers = [];
+      offsets.forEach(function (k) {
+        var dx = (n + k) * P;
+        pano.skyline.forEach(function (line) {
+          skyline.addLayer(L.polyline(line.map(function (q) { return [q[0], q[1] + dx]; }),
+                                      {color: "#ffd400", weight: 1.5, opacity: .9, interactive: false}));
+        });
+        ranked.forEach(function (nm) {
+          var m = L.circleMarker([nm.pos[0], nm.pos[1] + dx], {radius: 2, color: "#fff", weight: 1, fillOpacity: 1})
+            .bindTooltip(nm.name + " (" + nm.km + " km)", {permanent: true, direction: "top", offset: [0, -4],
+                         className: "name-label" + (nm.terrain === "glacier" ? " glacier" : "")});
+          nameMarkers.push(m);
+          names.addLayer(m);
+        });
+      });
+    }
+    map.on("move", placeCopies);
+    function declutter() {
+      var shown = [];
+      nameMarkers.forEach(function (m) {
+        var e = m.getTooltip() && m.getTooltip().getElement();
+        if (!e) return;
+        e.style.visibility = "visible";
+        var r = e.getBoundingClientRect();
+        var hit = shown.some(function (s) { return r.left < s.right + 4 && r.right + 4 > s.left && r.top < s.bottom && r.bottom > s.top; });
+        e.style.visibility = hit ? "hidden" : "visible";
+        if (m._path) m._path.style.visibility = e.style.visibility;
+        if (!hit) shown.push(r);
+      });
+    }
+    map.on("zoomend moveend", declutter);
+
+    var ratio = .5, swipe = document.getElementById("swipe");
+    var line = swipe.querySelector(".line"), knob = swipe.querySelector(".knob");
+    var editingTies = false;  // tie-point mode shows the whole terrain, blended, without the swipe
+    function clip() {
+      if (editingTies) { map.getPane("render").style.clip = "auto"; return; }
+      var size = map.getSize(), nw = map.containerPointToLayerPoint([0, 0]), se = map.containerPointToLayerPoint(size);
+      map.getPane("render").style.clip = "rect(" + [nw.y, se.x, se.y, nw.x + size.x * ratio].join("px,") + "px)";
+      line.style.left = knob.style.left = (ratio * 100) + "%";
+    }
+    map.on("move zoom resize", clip);
+    var dragging = false;
+    knob.addEventListener("pointerdown", function (e) { dragging = true; knob.setPointerCapture(e.pointerId); e.stopPropagation(); });
+    knob.addEventListener("pointermove", function (e) {
+      if (!dragging) return;
+      var r = swipe.getBoundingClientRect();
+      ratio = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      clip();
+    });
+    knob.addEventListener("pointerup", function () { dragging = false; });
+    function toggle(id, layerObj, after) {
+      document.getElementById(id).addEventListener("change", function (e) {
+        if (e.target.checked) layerObj.addTo(map); else map.removeLayer(layerObj);
+        if (after) after(e.target.checked);
+        clip(); declutter();
+      });
+    }
+    toggle("t-skyline", skyline);
+    toggle("t-names", names);
+    toggle("t-render", render, function (on) {
+      swipe.style.display = on ? "" : "none";
+      document.getElementById("badge-right").style.display = on ? "" : "none";
+    });
+
+    // Feedback and tie points: only when served by the local phone tool (/site/...), not on GitHub Pages.
+    if (location.pathname.indexOf("/site/") === 0) {
+      var fb = document.getElementById("feedback");
+      fb.hidden = false;
+      var api = location.pathname.replace(/\/site\/.*$/, "/api/viewer/") + group;
+      var pairs = [], pending = null, editing = false;
+      var tieLayer = L.layerGroup().addTo(map);
+      var modeBtn = document.getElementById("tp-mode"), undoBtn = document.getElementById("tp-undo");
+      var opacity = document.getElementById("tp-opacity"), opacityLabel = document.getElementById("tp-opacity-label");
+      function drawTies() {
+        tieLayer.clearLayers();
+        var n = circle ? turn : 0;
+        pairs.concat(pending ? [{plate: pending}] : []).forEach(function (q) {
+          var a = [q.plate[0], q.plate[1] + n * P];
+          L.circleMarker(a, {radius: 7, color: "#fff", weight: 2, fillColor: "#e0312b", fillOpacity: 1, interactive: false}).addTo(tieLayer);
+          if (q.terrain) {
+            var c = [q.terrain[0], q.terrain[1] + n * P];
+            L.polyline([a, c], {color: "#fff", weight: 2, dashArray: "4 3", interactive: false}).addTo(tieLayer);
+            L.circleMarker(c, {radius: 7, color: "#fff", weight: 2, fillColor: "#2b6fe0", fillOpacity: 1, interactive: false}).addTo(tieLayer);
+          }
+        });
+        document.getElementById("tp-count").innerHTML = guidance();
+        undoBtn.hidden = !editing || (!pairs.length && !pending);
+      }
+      map.on("move", function () { drawTies(); });
+      // The rule experiments.tiepoints uses: a position needs 3 points; the focal length (scale) needs
+      // at least 5 points spread over at least 40 degrees of the panorama.
+      function guidance() {
+        var n = pairs.length;
+        if (!n) return "";
+        var az = pairs.map(function (q) { return q.plate[1] / F * 180 / Math.PI; });
+        var spread = Math.max.apply(null, az) - Math.min.apply(null, az);
+        var text = n + " point" + (n > 1 ? "s" : "") + ", spread " + Math.round(spread) + "°. ";
+        if (n >= 5 && spread >= 40) return text + "<b>Enough to check the scale (focal length) and position.</b>";
+        if (n >= 3) return text + "Enough for the position; for the scale, add " +
+          (n < 5 ? (5 - n) + " more" : "points further apart") + (spread < 40 ? " spread over at least 40° (about one plate)" : "") + ".";
+        return text + "Add at least " + (3 - n) + " more for the position.";
+      }
+      function setEditing(on) {
+        editing = on;
+        editingTies = on;
+        modeBtn.textContent = on ? "Done marking" : "Mark misaligned features";
+        document.getElementById("tp-help").hidden = !on;
+        opacityLabel.hidden = !on;
+        swipe.style.display = on || !document.getElementById("t-render").checked ? "none" : "";
+        map.getPane("render").style.opacity = on ? opacity.value / 100 : 1;
+        clip();
+        drawTies();
+      }
+      modeBtn.addEventListener("click", function () { setEditing(!editing); });
+      opacity.addEventListener("input", function () { map.getPane("render").style.opacity = opacity.value / 100; });
+      map.on("click", function (e) {
+        if (!editing) return;
+        // Store both points in the first turn (the plate point's turn decides).
+        var k = circle ? Math.floor(e.latlng.lng / P) : 0;
+        var point = [e.latlng.lat, e.latlng.lng - (pending ? pending.turn : k) * P];
+        if (!pending) { pending = [point[0], point[1]]; pending.turn = k; }
+        else { pairs.push({plate: [pending[0], pending[1]], terrain: point}); pending = null; }
+        drawTies();
+      });
+      undoBtn.addEventListener("click", function () { if (pending) pending = null; else pairs.pop(); drawTies(); });
+      function history() {
+        fetch(api).then(function (r) { return r.json(); }).then(function (list) {
+          document.getElementById("fb-history").innerHTML = list.map(function (a) {
+            return "<li>" + a.time.slice(0, 16).replace("T", " ") + ": " + (a.choice || "no verdict") +
+              (a.tiepoints && a.tiepoints.length ? ", " + a.tiepoints.length + " tie points" : "") +
+              (a.text ? " — " + a.text.replace(/</g, "&lt;") : "") + "</li>";
+          }).join("");
+        });
+      }
+      history();
+      document.getElementById("fb-save").addEventListener("click", function () {
+        var picked = document.querySelector("input[name=verdict]:checked");
+        var body = {verdict: picked ? picked.value : "", note: document.getElementById("fb-note").value, tiepoints: pairs};
+        var status = document.getElementById("fb-status");
+        status.textContent = "Saving…";
+        fetch(api, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+          .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+          .then(function () {
+            status.textContent = "Saved.";
+            pairs = []; pending = null; document.getElementById("fb-note").value = "";
+            if (picked) picked.checked = false;
+            setEditing(false); history();
+          })
+          .catch(function (err) { status.textContent = "Not saved (" + err.message + "). Nothing was lost; try again."; });
+      });
+    }
+    // Start with the plates filling the map's height (on a phone, fitting three plates across left
+    // the strip tiny), at the first plate's left edge.
+    var size = map.getSize(), z0 = Math.log2(size.y / (1.1 * (yMax - yMin)));
+    map.setView([(yMin + yMax) / 2, size.x / 2 / Math.pow(2, z0)], z0, {animate: false});
+    placeCopies();
+    clip();
+  }).catch(function () {
+    document.getElementById("title").textContent = "Panorama " + group + " not found";
+  });
+})();
+</script>
+</body>
+</html>
